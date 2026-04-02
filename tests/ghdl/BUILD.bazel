@@ -1,0 +1,32 @@
+load("@rules_vhdl//vhdl:defs.bzl", "vhdl_library")
+load("//cocotb:defs.bzl", "cocotb_test")
+
+vhdl_library(
+    name = "counter",
+    srcs = ["counter.vhd"],
+)
+
+cocotb_test(
+    name = "counter_test",
+    srcs = ["counter_test.py"],
+    module = ":counter",
+    sim = "ghdl",
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
+)
+
+vhdl_library(
+    name = "adder",
+    srcs = ["adder.vhd"],
+)
+
+cocotb_test(
+    name = "adder_test",
+    srcs = ["adder_test.py"],
+    module = ":adder",
+    sim = "ghdl",
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
+)

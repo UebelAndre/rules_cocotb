@@ -1,0 +1,50 @@
+"""Minimal downstream example for rules_cocotb (Verilator).
+
+Demonstrates the full self-contained setup a consumer needs: its own
+`cocotb_pip_deps` lockset and its own `cocotb_toolchain`. The
+`@rules_cocotb//cocotb/toolchain` target is rules_cocotb's *internal*
+toolchain (used only for the in-tree test suite) — downstream projects
+roll their own using `cocotb_verilator_sim` / `cocotb_icarus_sim` /
+`cocotb_ghdl_sim` (etc.) and the `cocotb_py_extract` /
+`cocotb_py_cc_import` helpers.
+"""
+
+module(
+    name = "rules_cocotb_simple_example",
+    version = "0.0.0",
+)
+
+bazel_dep(name = "platforms", version = "1.0.0")
+bazel_dep(name = "rules_cocotb", version = "0.1.0")
+bazel_dep(name = "rules_req_compile", version = "1.1.0")
+bazel_dep(name = "rules_venv", version = "0.18.0")
+bazel_dep(name = "rules_verilator", version = "0.3.2")
+bazel_dep(name = "rules_verilog", version = "1.1.1")
+bazel_dep(name = "verilator", version = "5.046.bcr.3")
+
+# Point at the rules_cocotb source tree alongside this example. Downstream
+# users would drop this override in favor of the BCR version.
+local_path_override(
+    module_name = "rules_cocotb",
+    path = "../..",
+)
+
+# Cocotb's Python wheels. The example pins only linux x86_64 (matching
+# what `adder_test` runs on). A real downstream project would extend
+# the dict to every platform it supports and pin its own cocotb version.
+# Labels in `requirements_locks` must be local to this workspace — the
+# `rules_req_compile` extension can't resolve labels in other repos.
+requirements = use_extension("@rules_req_compile//extensions:python.bzl", "requirements")
+requirements.parse(
+    name = "cocotb_pip_deps",
+    requirements_locks = {
+        "//:requirements_linux_x86_64.txt": "//:linux-x86_64",
+        "//:requirements_macos_aarch64.txt": "//:macos-aarch64",
+        "//:requirements_windows_x86_64.txt": "//:windows-x86_64",
+    },
+)
+use_repo(requirements, "cocotb_pip_deps")
+
+# Register the custom cocotb_toolchain defined in this workspace's
+# top-level BUILD.bazel.
+register_toolchains("//:cocotb_toolchain")

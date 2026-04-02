@@ -1,0 +1,9 @@
+# Development requirements
+
+-r ../../cocotb/requirements.in
+
+black
+isort
+mypy
+pylint
+pytest-cov

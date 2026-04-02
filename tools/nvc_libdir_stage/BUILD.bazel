@@ -1,0 +1,15 @@
+"""Internal staging tool used by cocotb_nvc_sim to consolidate
+per-library TreeArtifact outputs from the BCR `nvc` module into a
+single root directory that `NVC_LIBPATH` can point at.
+
+Intentionally private — consumers don't need this directly; the
+public surface is `cocotb_nvc_sim(vhdl_libs = [...])`.
+"""
+
+load("@rules_venv//python/venv:defs.bzl", "py_venv_binary")
+
+py_venv_binary(
+    name = "nvc_libdir_stage",
+    srcs = ["nvc_libdir_stage.py"],
+    visibility = ["//cocotb/private/simulators:__pkg__"],
+)

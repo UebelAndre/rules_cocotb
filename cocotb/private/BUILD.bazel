@@ -1,0 +1,20 @@
+load("@bazel_skylib//:bzl_library.bzl", "bzl_library")
+load(":cocotb_toolchain.bzl", "current_cocotb_toolchain_lib")
+
+current_cocotb_toolchain_lib(
+    name = "current_cocotb_toolchain_lib",
+    visibility = ["//visibility:public"],
+)
+
+bzl_library(
+    name = "bzl_lib",
+    srcs = glob(["*.bzl"]),
+    visibility = ["//cocotb:__pkg__"],
+    deps = [
+        "//cocotb/private/simulators:bzl_lib",
+        "@rules_cc//cc/common",
+        "@rules_venv//python:defs_bzl",
+        "@rules_venv//python/venv:bzl_lib",
+        "@rules_vhdl//vhdl:defs_bzl",
+    ],
+)

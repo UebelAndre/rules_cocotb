@@ -1,0 +1,100 @@
+load("@rules_cocotb//cocotb:cocotb_test.bzl", "cocotb_test")
+load("@rules_cocotb//cocotb:cocotb_toolchain.bzl", "cocotb_toolchain")
+load("@rules_cocotb//cocotb:cocotb_verilator_sim.bzl", "cocotb_verilator_sim")
+load("@rules_venv//python:py_library.bzl", "py_library")
+load("@rules_verilog//verilog:defs.bzl", "verilog_library")
+
+# Constraint settings referenced from `MODULE.bazel`'s `requirements.parse`
+# call. `rules_req_compile`'s extension resolves these labels in the
+# calling module's repo, so they must be local.
+config_setting(
+    name = "linux-x86_64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "macos-aarch64",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:aarch64",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "windows-x86_64",
+    constraint_values = [
+        "@platforms//os:windows",
+        "@platforms//cpu:x86_64",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+# ---------------------------------------------------------------------------
+# Cocotb python library + Verilator sim, wired with a custom toolchain.
+# Cocotb's runner handles the verilator build at test time; no extra
+# extraction targets are needed.
+# ---------------------------------------------------------------------------
+
+py_library(
+    name = "cocotb",
+    deps = [
+        "@cocotb_pip_deps//cocotb",
+        "@cocotb_pip_deps//pytest",
+    ],
+)
+
+cocotb_verilator_sim(
+    name = "cocotb_verilator",
+    cocotb = ":cocotb",
+    # cocotb's wheel only ships its verilator VPI plugin
+    # (`cocotbvpi_verilator`) on Linux and macOS — the Windows wheel
+    # bundles aldec/ghdl/icarus/modelsim plugins but not verilator.
+    # Mark this toolchain entry Linux+macOS so Bazel skips analysis on
+    # Windows instead of failing the cocotb-lib lookup.
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    verilator = "@verilator//:verilator_executable",
+    deps = ["@verilator//:verilated"],
+)
+
+cocotb_toolchain(
+    name = "cocotb_toolchain_def",
+    cocotb = ":cocotb",
+    default_sim = "verilator",
+    simulators = {":cocotb_verilator": "verilator"},
+)
+
+toolchain(
+    name = "cocotb_toolchain",
+    toolchain = ":cocotb_toolchain_def",
+    toolchain_type = "@rules_cocotb//cocotb:toolchain_type",
+)
+
+# ---------------------------------------------------------------------------
+# The actual test.
+# ---------------------------------------------------------------------------
+
+verilog_library(
+    name = "adder",
+    srcs = ["adder.sv"],
+)
+
+cocotb_test(
+    name = "adder_test",
+    srcs = ["adder_test.py"],
+    module = ":adder",
+    sim = "verilator",
+    # Verilator is currently only supported on linux x86_64.
+    target_compatible_with = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+)

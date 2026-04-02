@@ -1,0 +1,46 @@
+load("@bazel_skylib//rules:write_file.bzl", "write_file")
+load("@rules_verilog//verilog:defs.bzl", "verilog_library")
+load("//cocotb:defs.bzl", "cocotb_test")
+
+# Arbitrary file as env input test for cocotb.
+write_file(
+    name = "sample_file",
+    out = "sample_file.txt",
+    content = ["THIS IS A TEST FILE"],
+    newline = "unix",
+)
+
+verilog_library(
+    name = "adder",
+    srcs = ["adder.sv"],
+)
+
+cocotb_test(
+    name = "adder_test",
+    srcs = ["adder_test.py"],
+    data = [":sample_file"],
+    env = {"LOCATION": "$(rlocationpath :sample_file)"},
+    module = ":adder",
+    sim = "verilator",
+    # Verilator is currently only supported on linux x86_64 systems.
+    target_compatible_with = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+)
+
+verilog_library(
+    name = "counter",
+    srcs = ["counter.sv"],
+)
+
+cocotb_test(
+    name = "counter_test",
+    srcs = ["counter_test.py"],
+    module = ":counter",
+    sim = "verilator",
+    target_compatible_with = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+    ],
+)

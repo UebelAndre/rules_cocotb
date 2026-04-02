@@ -1,0 +1,82 @@
+load("@rules_venv//python:py_library.bzl", "py_library")
+load("//cocotb:cocotb_ghdl_sim.bzl", "cocotb_ghdl_sim")
+load("//cocotb:cocotb_icarus_sim.bzl", "cocotb_icarus_sim")
+load("//cocotb:cocotb_nvc_sim.bzl", "cocotb_nvc_sim")
+load("//cocotb:cocotb_toolchain.bzl", "cocotb_toolchain")
+load("//cocotb:cocotb_verilator_sim.bzl", "cocotb_verilator_sim")
+
+cocotb_ghdl_sim(
+    name = "cocotb_ghdl",
+    ghdl = "@ghdl",
+    vhdl_libs = ["@ghdl//:vhdl_libs_v08"],
+)
+
+cocotb_nvc_sim(
+    name = "cocotb_nvc",
+    nvc = "@nvc",
+    vhdl_libs = ["@nvc//:vhdl_libs"],
+)
+
+cocotb_icarus_sim(
+    name = "cocotb_icarus",
+    iverilog = "@iverilog//:iverilog",
+    ivl_files = {
+        "@iverilog//:ivl": "ivl",
+        "@iverilog//ivlpp:ivlpp": "ivlpp",
+        "@iverilog//tgt-vvp:vvp-s.conf.in": "vvp-s.conf",
+        "@iverilog//tgt-vvp:vvp.conf.in": "vvp.conf",
+        "@iverilog//tgt-vvp:vvp_tgt": "vvp.tgt",
+        "@iverilog//vpi:system_vpi": "system.vpi",
+        "@iverilog//vpi:v2005_math_vpi": "v2005_math.vpi",
+        "@iverilog//vpi:v2009_vpi": "v2009.vpi",
+        "@iverilog//vpi:va_math_vpi": "va_math.vpi",
+        "@iverilog//vpi:vhdl_sys_vpi": "vhdl_sys.vpi",
+        "@iverilog//vpi:vhdl_textio_vpi": "vhdl_textio.vpi",
+    },
+    vvp = "@iverilog//:vvp",
+)
+
+py_library(
+    name = "cocotb",
+    deps = [
+        "@cocotb_pip_deps//cocotb",
+        "@cocotb_pip_deps//pytest",
+    ],
+)
+
+cocotb_verilator_sim(
+    name = "cocotb_verilator",
+    cocotb = ":cocotb",
+    # cocotb's wheel only ships its verilator VPI plugin
+    # (`cocotbvpi_verilator`) on Linux and macOS — the Windows wheel
+    # bundles aldec/ghdl/icarus/modelsim plugins but not verilator.
+    # Until cocotb publishes a Windows verilator binding, mark this
+    # toolchain entry Linux+macOS so Bazel skips analysis on Windows
+    # instead of failing the cocotb-lib lookup.
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    verilator = "@verilator//:verilator_executable",
+    deps = ["@verilator//:verilated"],
+)
+
+cocotb_toolchain(
+    name = "cocotb_toolchain",
+    cocotb = ":cocotb",
+    default_sim = "verilator",
+    simulators = {
+        ":cocotb_ghdl": "ghdl",
+        ":cocotb_icarus": "icarus",
+        ":cocotb_nvc": "nvc",
+        ":cocotb_verilator": "verilator",
+    },
+)
+
+toolchain(
+    name = "toolchain",
+    toolchain = ":cocotb_toolchain",
+    toolchain_type = "//cocotb:toolchain_type",
+    visibility = ["//visibility:public"],
+)

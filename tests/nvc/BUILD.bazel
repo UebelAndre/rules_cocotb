@@ -1,0 +1,17 @@
+load("@rules_vhdl//vhdl:defs.bzl", "vhdl_library")
+load("//cocotb:defs.bzl", "cocotb_test")
+
+vhdl_library(
+    name = "counter",
+    srcs = ["counter.vhd"],
+)
+
+cocotb_test(
+    name = "counter_test",
+    srcs = ["counter_test.py"],
+    module = ":counter",
+    sim = "nvc",
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
+)

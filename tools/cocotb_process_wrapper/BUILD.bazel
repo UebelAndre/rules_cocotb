@@ -1,0 +1,16 @@
+load("@rules_venv//python:defs.bzl", "py_library")
+
+exports_files(
+    ["cocotb_process_wrapper.py"],
+    visibility = ["//visibility:public"],
+)
+
+py_library(
+    name = "cocotb_process_wrapper",
+    srcs = ["cocotb_process_wrapper.py"],
+    visibility = ["//visibility:public"],
+    deps = [
+        "//cocotb/private:current_cocotb_toolchain_lib",
+        "@rules_venv//python/runfiles",
+    ],
+)
