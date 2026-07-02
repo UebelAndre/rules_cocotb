@@ -6,10 +6,10 @@ module(
 )
 
 bazel_dep(name = "bazel_skylib", version = "1.8.2")
-bazel_dep(name = "rules_verilog", version = "1.2.0")
-bazel_dep(name = "rules_vhdl", version = "0.2.0")
+bazel_dep(name = "rules_verilog", version = "1.4.2")
+bazel_dep(name = "rules_vhdl", version = "0.4.1")
 bazel_dep(name = "verilator", version = "5.046.bcr.3")
-bazel_dep(name = "rules_verilator", version = "0.3.2")
+bazel_dep(name = "rules_verilator", version = "1.1.1")
 bazel_dep(name = "ghdl", version = "6.0.0.bcr.2")
 bazel_dep(name = "iverilog", version = "13.0.bcr.1")
 bazel_dep(name = "nvc", version = "1.21.0")

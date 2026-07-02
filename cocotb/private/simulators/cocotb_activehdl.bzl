@@ -1,8 +1,12 @@
 """Cocotb Aldec Active-HDL simulator integration"""
 
-load("@rules_verilog//verilog:defs.bzl", "VerilogInfo")
-load("@rules_vhdl//vhdl:defs.bzl", "VhdlInfo")
-load(":cocotb_sim_utils.bzl", "CocotbSimInfo", "CocotbSimOutputInfo", "SIM_ENV_ATTR")
+load(
+    ":cocotb_sim_utils.bzl",
+    "CocotbSimInfo",
+    "CocotbSimOutputInfo",
+    "SIM_ENV_ATTR",
+    "collect_hdl_sources",
+)
 
 CocotbSimActiveHdlInfo = provider(
     doc = "Active-HDL-specific extension of `CocotbSimInfo`.",
@@ -36,21 +40,20 @@ def activehdl_compile(ctx, simulator, module, sim_opts):
     if not sim_info.vsimsa:
         fail("cocotb_activehdl_sim requires a vsimsa binary")
 
-    if VerilogInfo in module:
-        all_srcs = module[VerilogInfo].srcs
-        all_data = module[VerilogInfo].data
-    elif VhdlInfo in module:
-        all_srcs = module[VhdlInfo].srcs
-        all_data = module[VhdlInfo].data
-    else:
-        fail("Module must provide VerilogInfo or VhdlInfo")
+    # Walk transitive same-language + cross-language deps. Active-HDL is a
+    # mixed-language simulator: cocotb's runner drives `vlog`/`vcom` per
+    # source, so every reachable Verilog/VHDL file (including cross-lang
+    # `verilog_deps` / `vhdl_deps`) must be in `build_sources`.
+    sources = collect_hdl_sources(
+        module,
+        sim = "activehdl",
+        allowed_languages = ["vhdl", "verilog"],
+    )
 
     return CocotbSimOutputInfo(
-        runfiles = ctx.runfiles(
-            transitive_files = depset(transitive = [all_srcs, all_data]),
-        ),
+        runfiles = ctx.runfiles(transitive_files = sources.runfiles),
         build_args = list(sim_opts),
-        build_sources = all_srcs.to_list(),
+        build_sources = sources.build_sources,
     )
 
 def _cocotb_activehdl_sim_impl(ctx):

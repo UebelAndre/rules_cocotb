@@ -30,3 +30,28 @@ cocotb_test(
         "@platforms//os:linux",
     ],
 )
+
+# Regression: cocotb sim integrations must stage transitive
+# `vhdl_library` deps. `counter_wrap` instantiates `work.counter_reg` —
+# if `collect_hdl_sources` skipped `VhdlInfo.deps`, `ghdl -a` would
+# fail with `unit not found: counter_reg`.
+vhdl_library(
+    name = "counter_reg",
+    srcs = ["counter_reg.vhd"],
+)
+
+vhdl_library(
+    name = "counter_wrap",
+    srcs = ["counter_wrap.vhd"],
+    deps = [":counter_reg"],
+)
+
+cocotb_test(
+    name = "counter_wrap_test",
+    srcs = ["counter_test.py"],
+    module = ":counter_wrap",
+    sim = "ghdl",
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
+)

@@ -41,3 +41,28 @@ cocotb_test(
         "@platforms//os:linux",
     ],
 )
+
+# Regression: cocotb sim integrations must stage transitive
+# `verilog_library` deps. `counter_wrap` instantiates `counter_reg` from
+# a separate library — if `collect_hdl_sources` skipped `VerilogInfo.deps`,
+# iverilog would fail with `Cannot find module: counter_reg`.
+verilog_library(
+    name = "counter_reg",
+    srcs = ["counter_reg.sv"],
+)
+
+verilog_library(
+    name = "counter_wrap",
+    srcs = ["counter_wrap.sv"],
+    deps = [":counter_reg"],
+)
+
+cocotb_test(
+    name = "counter_wrap_test",
+    srcs = ["counter_test.py"],
+    module = ":counter_wrap",
+    sim = "icarus",
+    target_compatible_with = [
+        "@platforms//os:linux",
+    ],
+)

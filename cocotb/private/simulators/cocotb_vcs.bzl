@@ -1,7 +1,12 @@
 """Cocotb Synopsys VCS simulator integration"""
 
-load("@rules_verilog//verilog:defs.bzl", "VerilogInfo")
-load(":cocotb_sim_utils.bzl", "CocotbSimInfo", "CocotbSimOutputInfo", "SIM_ENV_ATTR")
+load(
+    ":cocotb_sim_utils.bzl",
+    "CocotbSimInfo",
+    "CocotbSimOutputInfo",
+    "SIM_ENV_ATTR",
+    "collect_hdl_sources",
+)
 
 CocotbSimVcsInfo = provider(
     doc = "VCS-specific extension of `CocotbSimInfo`.",
@@ -33,16 +38,20 @@ def vcs_compile(ctx, simulator, module, sim_opts):
     if not sim_info.vcs:
         fail("cocotb_vcs_sim requires a vcs binary")
 
-    verilog_info = module[VerilogInfo]
-    all_srcs = verilog_info.srcs
-    all_data = verilog_info.data
+    # Walk transitive Verilog deps. VCS is Verilog-only; a `verilog_library`
+    # with cross-language `vhdl_deps` (or a `vhdl_library` handed in as the
+    # top-level module) is rejected at analysis time — vcs cannot compile
+    # VHDL sources and would fail deep in cocotb's runner otherwise.
+    sources = collect_hdl_sources(
+        module,
+        sim = "vcs",
+        allowed_languages = ["verilog"],
+    )
 
     return CocotbSimOutputInfo(
-        runfiles = ctx.runfiles(
-            transitive_files = depset(transitive = [all_srcs, all_data]),
-        ),
+        runfiles = ctx.runfiles(transitive_files = sources.runfiles),
         build_args = list(sim_opts),
-        build_sources = all_srcs.to_list(),
+        build_sources = sources.build_sources,
     )
 
 def _cocotb_vcs_sim_impl(ctx):

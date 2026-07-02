@@ -1,7 +1,12 @@
 """Cocotb GHDL simulator integration"""
 
-load("@rules_vhdl//vhdl:defs.bzl", "VhdlInfo")
-load(":cocotb_sim_utils.bzl", "CocotbSimInfo", "CocotbSimOutputInfo", "SIM_ENV_ATTR")
+load(
+    ":cocotb_sim_utils.bzl",
+    "CocotbSimInfo",
+    "CocotbSimOutputInfo",
+    "SIM_ENV_ATTR",
+    "collect_hdl_sources",
+)
 
 def _vhdl_lib_root_rloc(ctx, vhdl_libs):
     """Return a runtime rlocation spec for the VHDL library root.
@@ -52,10 +57,16 @@ def ghdl_compile(ctx, simulator, module, sim_opts):
         cocotb's runner will (re)compile at test time.
     """
     sim_info = simulator[CocotbSimGhdlInfo]
-    vhdl_info = module[VhdlInfo]
 
-    all_srcs = vhdl_info.srcs
-    all_data = vhdl_info.data
+    # Walk transitive VHDL deps. GHDL is VHDL-only, so a Verilog dep
+    # (whether via `VerilogInfo` on the top or via a `vhdl_library`'s
+    # `verilog_deps`) is rejected at analysis time — silently dropping
+    # would fail at `ghdl -a` with an unhelpful "unit not found" error.
+    sources = collect_hdl_sources(
+        module,
+        sim = "ghdl",
+        allowed_languages = ["vhdl"],
+    )
 
     sim_env = {}
     if sim_info.ghdl_prefix:
@@ -87,12 +98,12 @@ def ghdl_compile(ctx, simulator, module, sim_opts):
 
     return CocotbSimOutputInfo(
         runfiles = ctx.runfiles(
-            transitive_files = depset(transitive = [all_srcs, all_data, sim_info.vhdl_libs]),
+            transitive_files = depset(transitive = [sources.runfiles, sim_info.vhdl_libs]),
         ),
         sim_env = sim_env,
         test_args = common_args,
         build_args = common_args,
-        build_sources = all_srcs.to_list(),
+        build_sources = sources.build_sources,
     )
 
 def _cocotb_ghdl_sim_impl(ctx):
