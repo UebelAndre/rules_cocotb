@@ -3,8 +3,13 @@
 load("@rules_cc//cc:find_cc_toolchain.bzl", "find_cpp_toolchain")
 load("@rules_cc//cc/common:cc_common.bzl", "cc_common")
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
-load("@rules_verilog//verilog:defs.bzl", "VerilogInfo")
-load(":cocotb_sim_utils.bzl", "CocotbSimInfo", "CocotbSimOutputInfo", "SIM_ENV_ATTR")
+load(
+    ":cocotb_sim_utils.bzl",
+    "CocotbSimInfo",
+    "CocotbSimOutputInfo",
+    "SIM_ENV_ATTR",
+    "collect_hdl_sources",
+)
 
 CocotbSimVerilatorInfo = provider(
     doc = "Verilator-specific extension of `CocotbSimInfo`.",
@@ -141,9 +146,17 @@ def verilator_compile(ctx, simulator, module, sim_opts):
         CocotbSimOutputInfo: Provider with the compiled binary and runfiles.
     """
     sim_info = simulator[CocotbSimVerilatorInfo]
-    verilog_info = module[VerilogInfo]
-    all_srcs = verilog_info.srcs
-    all_data = verilog_info.data
+
+    # Walk transitive Verilog deps. Verilator is Verilog-only, so a
+    # `verilog_library` with cross-language `vhdl_deps` (or a
+    # `vhdl_library` handed in as the top-level module) is rejected at
+    # analysis time — verilator would otherwise fail on the first `.vhd`
+    # filename with a cryptic parse error.
+    sources = collect_hdl_sources(
+        module,
+        sim = "verilator",
+        allowed_languages = ["verilog"],
+    )
 
     module_top = module.label.name
 
@@ -178,14 +191,20 @@ def verilator_compile(ctx, simulator, module, sim_opts):
         args.add("--coverage-user")
 
     args.add(sim_info.main)
-    args.add_all(all_srcs)
+
+    # Pass only compilable sources (`.v` / `.sv`) as command-line inputs.
+    # Headers (`.vh` / `.svh`) are staged in the action's `inputs` so
+    # verilator's preprocessor can resolve `` `include `` directives at
+    # parse time, but naming them on the command line would tell
+    # verilator to parse them as top-level modules and fail.
+    args.add_all(sources.srcs)
     args.add_all(sim_opts)
 
     ctx.actions.run(
         arguments = [args],
         mnemonic = "CocotbVerilatorCompile",
         executable = sim_info.process_wrapper.executable,
-        inputs = depset([sim_info.main], transitive = [all_srcs, all_data]),
+        inputs = depset([sim_info.main], transitive = [sources.srcs, sources.hdrs]),
         outputs = [verilator_output],
         tools = [sim_info.process_wrapper, sim_info.all_files],
     )
@@ -286,7 +305,7 @@ def verilator_compile(ctx, simulator, module, sim_opts):
 
     return CocotbSimOutputInfo(
         bin = linking_output.executable,
-        runfiles = ctx.runfiles(files = dynamic_libs, transitive_files = all_data),
+        runfiles = ctx.runfiles(files = dynamic_libs, transitive_files = sources.data),
     )
 
 def _cocotb_verilator_sim_impl(ctx):
@@ -407,10 +426,7 @@ the rule extracts what it needs internally.
             executable = True,
             cfg = "target",
         ),
-        "_cc_toolchain": attr.label(
-            default = Label("@bazel_tools//tools/cpp:current_cc_toolchain"),
-        ),
     },
-    toolchains = ["@bazel_tools//tools/cpp:toolchain_type"],
+    toolchains = ["@rules_cc//cc:toolchain_type"],
     fragments = ["cpp"],
 )

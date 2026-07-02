@@ -1,7 +1,12 @@
 """Cocotb Icarus Verilog simulator integration"""
 
-load("@rules_verilog//verilog:defs.bzl", "VerilogInfo")
-load(":cocotb_sim_utils.bzl", "CocotbSimInfo", "CocotbSimOutputInfo", "SIM_ENV_ATTR")
+load(
+    ":cocotb_sim_utils.bzl",
+    "CocotbSimInfo",
+    "CocotbSimOutputInfo",
+    "SIM_ENV_ATTR",
+    "collect_hdl_sources",
+)
 
 CocotbSimIcarusInfo = provider(
     doc = "Icarus Verilog-specific extension of `CocotbSimInfo`.",
@@ -29,9 +34,17 @@ def icarus_compile(ctx, simulator, module, sim_opts):
         CocotbSimOutputInfo: Provider with the compiled VVP binary and runfiles.
     """
     sim_info = simulator[CocotbSimIcarusInfo]
-    verilog_info = module[VerilogInfo]
-    all_srcs = verilog_info.srcs
-    all_data = verilog_info.data
+
+    # Walk transitive Verilog deps. Icarus is Verilog-only, so a
+    # `verilog_library` with cross-language `vhdl_deps` (or a
+    # `vhdl_library` handed in as the top-level module) is rejected at
+    # analysis time — iverilog would otherwise fail on the first
+    # `.vhd` filename with a cryptic parse error.
+    sources = collect_hdl_sources(
+        module,
+        sim = "icarus",
+        allowed_languages = ["verilog"],
+    )
 
     module_top = module.label.name
 
@@ -46,7 +59,13 @@ def icarus_compile(ctx, simulator, module, sim_opts):
     args.add("-s", module_top)
     args.add_all(ctx.attr.params, format_each = "-P%s")
     args.add_all(sim_opts)
-    args.add_all(all_srcs)
+
+    # Pass only compilable sources (`.v` / `.sv`) as command-line inputs.
+    # Headers (`.vh` / `.svh`) go into the action's inputs so iverilog
+    # can resolve textual `` `include `` directives at parse time — but
+    # naming them on the command line would tell iverilog to parse them
+    # as top-level compilation units, which fails.
+    args.add_all(sources.srcs)
 
     env = {}
     if sim_info.ivl_base:
@@ -56,7 +75,7 @@ def icarus_compile(ctx, simulator, module, sim_opts):
         arguments = [args],
         mnemonic = "CocotbIcarusCompile",
         executable = sim_info.iverilog,
-        inputs = all_srcs,
+        inputs = depset(transitive = [sources.srcs, sources.hdrs]),
         outputs = [output_vvp],
         tools = sim_info.all_files,
         env = env,
@@ -64,7 +83,7 @@ def icarus_compile(ctx, simulator, module, sim_opts):
 
     return CocotbSimOutputInfo(
         bin = output_vvp,
-        runfiles = ctx.runfiles(transitive_files = all_data),
+        runfiles = ctx.runfiles(transitive_files = sources.data),
     )
 
 def _assemble_ivl_base(ctx):
