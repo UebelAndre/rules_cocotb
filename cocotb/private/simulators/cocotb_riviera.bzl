@@ -1,8 +1,12 @@
 """Cocotb Aldec Riviera-PRO simulator integration"""
 
-load("@rules_verilog//verilog:defs.bzl", "VerilogInfo")
-load("@rules_vhdl//vhdl:defs.bzl", "VhdlInfo")
-load(":cocotb_sim_utils.bzl", "CocotbSimInfo", "CocotbSimOutputInfo", "SIM_ENV_ATTR")
+load(
+    ":cocotb_sim_utils.bzl",
+    "CocotbSimInfo",
+    "CocotbSimOutputInfo",
+    "SIM_ENV_ATTR",
+    "collect_hdl_sources",
+)
 
 CocotbSimRivieraInfo = provider(
     doc = "Riviera-PRO-specific extension of `CocotbSimInfo`.",
@@ -33,35 +37,18 @@ def riviera_compile(ctx, simulator, module, sim_opts):
     if not sim_info.vsimsa:
         fail("cocotb_riviera_sim requires a vsimsa binary")
 
-    # Walk transitive deps so cocotb's runner.build() compiles every package
-    # the module's wrapper references via `library X; use X.pkg.all`. Without
-    # this, `acom` of the wrapper fails with `Cannot find context item`
-    # because deps' .vhd files were never compiled into the work library.
-    # Build_sources is dep-first ordered (depset default `topological`), so
-    # VHDL package compile order is naturally satisfied.
-    src_depsets = []
-    data_depsets = []
-    if VerilogInfo in module:
-        info = module[VerilogInfo]
-        for dep_info in info.deps.to_list():
-            src_depsets.append(dep_info.srcs)
-            src_depsets.append(dep_info.hdrs)
-            data_depsets.append(dep_info.data)
-        src_depsets.append(info.srcs)
-        src_depsets.append(info.hdrs)
-        data_depsets.append(info.data)
-    elif VhdlInfo in module:
-        info = module[VhdlInfo]
-        for dep_info in info.deps.to_list():
-            src_depsets.append(dep_info.srcs)
-            data_depsets.append(dep_info.data)
-        src_depsets.append(info.srcs)
-        data_depsets.append(info.data)
-    else:
-        fail("Module must provide VerilogInfo or VhdlInfo")
-
-    all_srcs = depset(transitive = src_depsets)
-    all_data = depset(transitive = data_depsets)
+    # Walk transitive same-language deps AND cross-language (`vhdl_deps` /
+    # `verilog_deps`) chains so cocotb's runner.build() compiles every
+    # package/entity/module the DUT references. Without the same-language
+    # walk, `acom`/`alog` of the wrapper fails with `Cannot find context
+    # item` because deps' sources were never staged. Without the
+    # cross-language walk, a `vhdl_library` that instantiates a Verilog
+    # component (or vice versa) fails to elaborate at test time.
+    sources = collect_hdl_sources(
+        module,
+        sim = "riviera",
+        allowed_languages = ["vhdl", "verilog"],
+    )
 
     # Coverage instrumentation. When the HDL module is exercised under
     # `bazel coverage`, fold the Aldec coverage flags into the runner's
@@ -86,12 +73,10 @@ def riviera_compile(ctx, simulator, module, sim_opts):
         test_args.extend(["-acdb_cov", "sbecam", "-acdb_file", "coverage.acdb"])
 
     return CocotbSimOutputInfo(
-        runfiles = ctx.runfiles(
-            transitive_files = depset(transitive = [all_srcs, all_data]),
-        ),
+        runfiles = ctx.runfiles(transitive_files = sources.runfiles),
         build_args = build_args,
         test_args = test_args,
-        build_sources = all_srcs.to_list(),
+        build_sources = sources.build_sources,
     )
 
 def _cocotb_riviera_sim_impl(ctx):

@@ -1,7 +1,12 @@
 """Cocotb NVC simulator integration"""
 
-load("@rules_vhdl//vhdl:defs.bzl", "VhdlInfo")
-load(":cocotb_sim_utils.bzl", "CocotbSimInfo", "CocotbSimOutputInfo", "SIM_ENV_ATTR")
+load(
+    ":cocotb_sim_utils.bzl",
+    "CocotbSimInfo",
+    "CocotbSimOutputInfo",
+    "SIM_ENV_ATTR",
+    "collect_hdl_sources",
+)
 
 # Basename used for the per-instance consolidated library tree. The
 # rloc helper below picks it out of `vhdl_libs` runfiles without
@@ -92,9 +97,15 @@ def nvc_compile(ctx, simulator, module, sim_opts):
     if not sim_info.nvc:
         fail("cocotb_nvc_sim requires an nvc binary")
 
-    vhdl_info = module[VhdlInfo]
-    all_srcs = vhdl_info.srcs
-    all_data = vhdl_info.data
+    # Walk transitive VHDL deps. NVC is VHDL-only, so a Verilog dep
+    # (whether via `VerilogInfo` on the top or via a `vhdl_library`'s
+    # `verilog_deps`) is rejected at analysis time — nvc would otherwise
+    # fail at `nvc -a` with an unhelpful "unit not found" error.
+    sources = collect_hdl_sources(
+        module,
+        sim = "nvc",
+        allowed_languages = ["vhdl"],
+    )
 
     sim_env = {}
     if sim_info.nvc_libpath:
@@ -112,12 +123,12 @@ def nvc_compile(ctx, simulator, module, sim_opts):
         runfiles = ctx.runfiles(
             transitive_files = depset(
                 direct = lib_root_files,
-                transitive = [all_srcs, all_data],
+                transitive = [sources.runfiles],
             ),
         ),
         sim_env = sim_env,
         build_args = list(sim_opts),
-        build_sources = all_srcs.to_list(),
+        build_sources = sources.build_sources,
     )
 
 def _cocotb_nvc_sim_impl(ctx):
