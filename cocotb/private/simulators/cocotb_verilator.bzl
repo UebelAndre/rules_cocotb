@@ -16,6 +16,7 @@ CocotbSimVerilatorInfo = provider(
     fields = {
         "all_files": "depset[File]: All transitive runfiles required by `simulator`.",
         "cc_deps": "list[CcInfo]: Pre-resolved CcInfo providers to link into all verilator executables (cocotb VPI libs + user deps).",
+        "copts": "list[str]: Additional C++ compiler flags for the generated model sources.",
         "copy_tree": "FilesToRunProvider: A tool for copying a tree of files.",
         "coverage_tool": "File: `verilator_coverage_bin` — invoked at test time to translate Verilator's `coverage.dat` into lcov for `bazel coverage`.",
         "main": "File: The cocotb entrypoint to use (typically `verilator.cpp` from cocotb).",
@@ -160,9 +161,13 @@ def verilator_compile(ctx, simulator, module, sim_opts):
 
     module_top = module.label.name
 
-    verilator_output = ctx.actions.declare_directory(
-        "{}.verilator/{}.build".format(ctx.label.name, module_top),
-    )
+    # Shared namespace for every artifact this function derives, so all
+    # verilator outputs for a target live under one `{name}.verilator/`
+    # prefix. Suffixed per artifact below; the bare prefix names the
+    # executable.
+    out_prefix = "{}.verilator/{}".format(ctx.label.name, module_top)
+
+    verilator_output = ctx.actions.declare_directory(out_prefix + ".build")
 
     args = ctx.actions.args()
     args.add(sim_info.simulator)
@@ -209,12 +214,8 @@ def verilator_compile(ctx, simulator, module, sim_opts):
         tools = [sim_info.process_wrapper, sim_info.all_files],
     )
 
-    verilator_output_cpp = ctx.actions.declare_directory(
-        "{}.verilator/{}.srcs".format(ctx.label.name, module_top),
-    )
-    verilator_output_hpp = ctx.actions.declare_directory(
-        "{}.verilator/{}.hdrs".format(ctx.label.name, module_top),
-    )
+    verilator_output_cpp = ctx.actions.declare_directory(out_prefix + ".srcs")
+    verilator_output_hpp = ctx.actions.declare_directory(out_prefix + ".hdrs")
 
     cp_args = ctx.actions.args()
     cp_args.add(verilator_output_cpp.path, format = "--src_output=%s")
@@ -271,7 +272,7 @@ def verilator_compile(ctx, simulator, module, sim_opts):
         actions = ctx.actions,
         feature_configuration = feature_configuration,
         cc_toolchain = cc_toolchain,
-        user_compile_flags = [],
+        user_compile_flags = sim_info.copts,
         srcs = [verilator_output_cpp],
         includes = [verilator_output_hpp.path],
         defines = ["{}={}".format(k, v) for k, v in defines.items()],
@@ -286,13 +287,39 @@ def verilator_compile(ctx, simulator, module, sim_opts):
         if info_id == "CcInfo":
             linking_contexts.append(info.linking_context)
 
-    linking_output = cc_common.link(
+    # Archive the model's objects into a static library instead of handing
+    # them to `cc_common.link` as raw `compilation_outputs`. Verilator's
+    # sources arrive as a tree artifact, so the objects are a tree artifact
+    # too, and rules_cc renders those as an `object_file_group` — which the
+    # `libraries_to_link` feature wraps in `-Wl,--start-lib` / `-Wl,--end-lib`
+    # with no `supports_start_end_lib` guard (rules_cc 0.2.8,
+    # `cc/private/toolchain_config/legacy_features.bzl`; the guard in
+    # `finalize_link_action.bzl` covers only static libraries). That spelling
+    # is gold/lld-only, so `ld.bfd` toolchains fail the link outright, and
+    # neither `--nostart_end_lib` nor `features = ["-supports_start_end_lib"]`
+    # suppresses it.
+    #
+    # Going through `ar` keeps the same lazy-loading semantics on every
+    # linker: toolchains that do support start/end-lib unpack the archive
+    # back into an object group and get an unchanged link line, while the
+    # rest link a real `.a`. This is also the shape `cc_library` itself uses,
+    # so it stays correct if rules_cc ever adds the missing guard — nothing
+    # here needs revisiting.
+    model_linking_context, _model_linking_outputs = cc_common.create_linking_context_from_compilation_outputs(
         actions = ctx.actions,
         feature_configuration = feature_configuration,
         cc_toolchain = cc_toolchain,
         compilation_outputs = compilation_outputs,
-        linking_contexts = linking_contexts,
-        name = "{}.verilator/{}".format(ctx.label.name, module_top),
+        name = out_prefix + ".model",
+        disallow_dynamic_library = True,
+    )
+
+    linking_output = cc_common.link(
+        actions = ctx.actions,
+        feature_configuration = feature_configuration,
+        cc_toolchain = cc_toolchain,
+        linking_contexts = [model_linking_context] + linking_contexts,
+        name = out_prefix,
         link_deps_statically = False,
     )
 
@@ -303,9 +330,19 @@ def verilator_compile(ctx, simulator, module, sim_opts):
                 if lib.dynamic_library:
                     dynamic_libs.append(lib.dynamic_library)
 
+    # The C++ runtime libraries the toolchain links against dynamically (e.g.
+    # libc++.so.1) are not part of `linking_contexts`, so carry them along or
+    # the simulator fails to start.
+    runtime_libs = cc_toolchain.dynamic_runtime_lib(
+        feature_configuration = feature_configuration,
+    )
+
     return CocotbSimOutputInfo(
         bin = linking_output.executable,
-        runfiles = ctx.runfiles(files = dynamic_libs, transitive_files = sources.data),
+        runfiles = ctx.runfiles(
+            files = dynamic_libs,
+            transitive_files = depset(transitive = [sources.data, runtime_libs]),
+        ),
     )
 
 def _cocotb_verilator_sim_impl(ctx):
@@ -355,6 +392,7 @@ def _cocotb_verilator_sim_impl(ctx):
         CocotbSimVerilatorInfo(
             all_files = all_files,
             cc_deps = cc_deps,
+            copts = ctx.attr.copts,
             copy_tree = ctx.attr.copy_tree[DefaultInfo].files_to_run,
             coverage_tool = ctx.executable.verilator_coverage,
             main = main,
@@ -395,6 +433,14 @@ the rule extracts what it needs internally.
         "cocotb": attr.label(
             doc = "The cocotb pip package (a `py_library` wrapping `@cocotb_pip_deps//cocotb`). Used to extract `verilator.cpp` and the cocotb VPI shared libraries.",
             mandatory = True,
+        ),
+        "copts": attr.string_list(
+            doc = ("Additional C++ compiler flags for the verilator model sources. " +
+                   "Appended after the toolchain's own flags and after `--copt` / " +
+                   "`--cxxopt`, so these win on conflict. Verilator's headers emit a " +
+                   "large number of `-Wsign-compare` warnings; `copts = " +
+                   "[\"-Wno-sign-compare\"]` silences them for every model this " +
+                   "simulator builds."),
         ),
         "copy_tree": attr.label(
             doc = "A tool for copying a tree of files. Defaults to the `rules_verilator` helper.",
