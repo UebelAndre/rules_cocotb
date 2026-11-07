@@ -4,36 +4,6 @@ load("@rules_cocotb//cocotb:cocotb_verilator_sim.bzl", "cocotb_verilator_sim")
 load("@rules_venv//python:py_library.bzl", "py_library")
 load("@rules_verilog//verilog:defs.bzl", "verilog_library")
 
-# Constraint settings referenced from `MODULE.bazel`'s `requirements.parse`
-# call. `rules_req_compile`'s extension resolves these labels in the
-# calling module's repo, so they must be local.
-config_setting(
-    name = "linux-x86_64",
-    constraint_values = [
-        "@platforms//os:linux",
-        "@platforms//cpu:x86_64",
-    ],
-    visibility = ["//visibility:public"],
-)
-
-config_setting(
-    name = "macos-aarch64",
-    constraint_values = [
-        "@platforms//os:macos",
-        "@platforms//cpu:aarch64",
-    ],
-    visibility = ["//visibility:public"],
-)
-
-config_setting(
-    name = "windows-x86_64",
-    constraint_values = [
-        "@platforms//os:windows",
-        "@platforms//cpu:x86_64",
-    ],
-    visibility = ["//visibility:public"],
-)
-
 # ---------------------------------------------------------------------------
 # Cocotb python library + Verilator sim, wired with a custom toolchain.
 # Cocotb's runner handles the verilator build at test time; no extra
