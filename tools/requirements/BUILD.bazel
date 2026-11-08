@@ -2,12 +2,6 @@ load("@rules_req_compile//:defs.bzl", "py_reqs_compiler", "py_reqs_solution_test
 
 exports_files(glob(["*.txt"]))
 
-PLATFORMS = [
-    "linux-x86_64",
-    "macos-aarch64",
-    "windows-x86_64",
-]
-
 filegroup(
     name = "requirements_in",
     srcs = [
@@ -18,31 +12,22 @@ filegroup(
     ],
 )
 
-[
-    py_reqs_compiler(
-        name = "requirements.{}.update".format(platform.replace("-", "_")),
-        requirements_in = "requirements_in",
-        requirements_txt = "requirements_{}.txt".format(platform.replace("-", "_")),
-        target_compatible_with = select({
-            "//tools/constraints:{}".format(platform): [],
-            "//conditions:default": ["@platforms//:incompatible"],
-        }),
-    )
-    for platform in PLATFORMS
-]
+# One target compiles the solution of every platform, from any host. The
+# solutions share the version of every package and record their platform
+# tag in their header, which is how `MODULE.bazel` selects between them.
+# Refresh with `bazel run //tools/requirements:requirements.update`
+# (`-- --upgrade` to move every pin).
+py_reqs_compiler(
+    name = "requirements.update",
+    requirements_in = ":requirements_in",
+    requirements_txts = {
+        "requirements_linux_x86_64.txt": "manylinux_2_28_x86_64",
+        "requirements_macos_aarch64.txt": "macosx_11_0_arm64",
+        "requirements_windows_x86_64.txt": "win_amd64",
+    },
+)
 
-[
-    py_reqs_solution_test(
-        name = "requirements_{}_test".format(platform.replace("-", "_")),
-        compiler = ":requirements.{}.update".format(platform.replace("-", "_")),
-    )
-    for platform in PLATFORMS
-]
-
-alias(
-    name = "update",
-    actual = select({
-        "//tools/constraints:{}".format(platform): ":requirements.{}.update".format(platform.replace("-", "_"))
-        for platform in PLATFORMS
-    }),
+py_reqs_solution_test(
+    name = "requirements_test",
+    compiler = ":requirements.update",
 )

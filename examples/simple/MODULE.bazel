@@ -16,7 +16,7 @@ module(
 
 bazel_dep(name = "platforms", version = "1.0.0")
 bazel_dep(name = "rules_cocotb", version = "0.1.0")
-bazel_dep(name = "rules_req_compile", version = "1.1.0")
+bazel_dep(name = "rules_req_compile", version = "1.7.1")
 bazel_dep(name = "rules_venv", version = "0.18.0")
 bazel_dep(name = "rules_verilator", version = "1.1.1")
 bazel_dep(name = "rules_verilog", version = "1.4.2")
@@ -29,18 +29,20 @@ local_path_override(
     path = "../..",
 )
 
-# Cocotb's Python wheels. The example pins only linux x86_64 (matching
-# what `adder_test` runs on). A real downstream project would extend
-# the dict to every platform it supports and pin its own cocotb version.
-# Labels in `requirements_locks` must be local to this workspace — the
-# `rules_req_compile` extension can't resolve labels in other repos.
+# Cocotb's Python wheels, copied from `//tools/requirements` in
+# rules_cocotb. Each lock is selected by the wheel platform tag in its
+# header (`## Platform: manylinux_2_28_x86_64`), so no config settings
+# are needed. A real downstream project would compile its own locks with
+# `py_reqs_compiler` and pin its own cocotb version. Lock labels must be
+# local to this workspace — the `rules_req_compile` extension resolves
+# them in the module defining the hub.
 requirements = use_extension("@rules_req_compile//extensions:python.bzl", "requirements")
 requirements.parse(
     name = "cocotb_pip_deps",
     requirements_locks = {
-        "//:requirements_linux_x86_64.txt": "//:linux-x86_64",
-        "//:requirements_macos_aarch64.txt": "//:macos-aarch64",
-        "//:requirements_windows_x86_64.txt": "//:windows-x86_64",
+        "//:requirements_linux_x86_64.txt": "linux_x86_64",
+        "//:requirements_macos_aarch64.txt": "macos_aarch64",
+        "//:requirements_windows_x86_64.txt": "windows_x86_64",
     },
 )
 use_repo(requirements, "cocotb_pip_deps")
