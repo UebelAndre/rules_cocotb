@@ -17,7 +17,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-2022]
+        # `ubuntu-latest` moved to 26.04 (GCC 15) in Nov 2026, which
+        # breaks the BCR `llvm-project@17.0.4` build pulled in by `nvc`
+        # and `ghdl` (missing `#include <cstdint>` in `SmallVector.h`).
+        # Pin to 24.04 until a patched LLVM lands on the registry.
+        os: [ubuntu-24.04, macos-latest, windows-2022]
         bazel-version: ["7.*", "8.*", "9.*"]
 
     steps:
@@ -86,3 +90,18 @@ jobs:
           bazel ${BAZEL_STARTUP_FLAGS} run //tools/coverage:assert_lcov_has_hits -- \
             "$(bazel ${BAZEL_STARTUP_FLAGS} info output_path)/_coverage/_coverage_report.dat" \
             counter.sv
+
+  # Single job for branch protection to require. Matrix jobs can be
+  # added, removed or renamed without touching the required checks.
+  ci-success:
+    name: CI Success
+    runs-on: ubuntu-24.04
+    needs: [test]
+    if: always()
+    steps:
+      - name: Check matrix results
+        run: |
+          if [ "${{ needs.test.result }}" != "success" ]; then
+            echo "test matrix result: ${{ needs.test.result }}"
+            exit 1
+          fi
